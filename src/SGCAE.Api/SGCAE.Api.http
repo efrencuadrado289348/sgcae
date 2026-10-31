@@ -1,0 +1,189 @@
+# Guion de pruebas SGCAE. Ejecuta las peticiones EN ORDEN (Visual Studio 2022+, Rider o VS Code + REST Client).
+# Los ids se toman automáticamente de las respuestas anteriores (# @name).
+@host = http://localhost:5125
+
+############################ RF-01 EMPLEADOS ############################
+
+# @name laura
+POST {{host}}/api/employees
+Content-Type: application/json
+
+{ "identification": "1032456789", "firstName": "Laura", "lastName": "Gómez",
+  "email": "laura.gomez@empresa.com", "position": "Auxiliar de bodega", "area": "Operaciones" }
+
+###
+# @name pedro
+POST {{host}}/api/employees
+Content-Type: application/json
+
+{ "identification": "99887766", "firstName": "Pedro", "lastName": "Ruiz",
+  "email": "pedro.ruiz@empresa.com", "position": "Supervisor", "area": "Logística" }
+
+### Error 409: identificación duplicada
+POST {{host}}/api/employees
+Content-Type: application/json
+
+{ "identification": "1032456789", "firstName": "Otra", "lastName": "Persona",
+  "email": "otra@empresa.com", "position": "X", "area": "Y" }
+
+### Error 400: correo inválido
+POST {{host}}/api/employees
+Content-Type: application/json
+
+{ "identification": "55554444", "firstName": "Ana", "lastName": "Díaz",
+  "email": "correo-malo", "position": "X", "area": "Y" }
+
+### Consultar
+GET {{host}}/api/employees/{{laura.response.body.$.id}}
+
+### Actualizar
+PUT {{host}}/api/employees/{{laura.response.body.$.id}}
+Content-Type: application/json
+
+{ "firstName": "Laura", "lastName": "Gómez Pérez", "email": "laura.gomez@empresa.com",
+  "position": "Coordinadora de bodega", "area": "Operaciones" }
+
+### Listar paginado
+GET {{host}}/api/employees?status=Active&page=1&pageSize=10
+
+######################## RF-06 PUNTOS DE ACCESO #########################
+
+# @name bodega
+POST {{host}}/api/access-points
+Content-Type: application/json
+
+{ "code": "BOD-01", "name": "Bodega principal", "type": "Warehouse" }
+
+###
+POST {{host}}/api/access-points
+Content-Type: application/json
+
+{ "code": "REC-01", "name": "Recepción", "type": "Reception" }
+
+###
+POST {{host}}/api/access-points
+Content-Type: application/json
+
+{ "code": "PAR-01", "name": "Parqueadero", "type": "Parking" }
+
+###
+# @name restringida
+POST {{host}}/api/access-points
+Content-Type: application/json
+
+{ "code": "RES-01", "name": "Cuarto de servidores", "type": "RestrictedArea" }
+
+### Deshabilitar área restringida
+PATCH {{host}}/api/access-points/{{restringida.response.body.$.id}}/disable
+
+### Solo habilitados
+GET {{host}}/api/access-points?isEnabled=true
+
+######################### RF-02 CREDENCIALES ###########################
+
+# @name credLaura
+POST {{host}}/api/employees/{{laura.response.body.$.id}}/credentials
+Content-Type: application/json
+
+{ "code": "CRD-000123" }
+
+###
+# @name credPedro
+POST {{host}}/api/employees/{{pedro.response.body.$.id}}/credentials
+Content-Type: application/json
+
+{ "code": "CRD-000456" }
+
+### Error 409: Laura ya tiene una credencial activa
+POST {{host}}/api/employees/{{laura.response.body.$.id}}/credentials
+Content-Type: application/json
+
+{ "code": "CRD-000999" }
+
+### Consultar estado
+GET {{host}}/api/credentials/{{credLaura.response.body.$.id}}
+
+################ RF-03 ENTRADAS Y SALIDAS (todas responden 200) ################
+
+### Autorizado: entrada
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000123", "accessPointCode": "BOD-01", "movementType": "Entry" }
+
+### Rechazado: InvalidMovementSequence (segunda entrada sin salida)
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000123", "accessPointCode": "BOD-01", "movementType": "Entry" }
+
+### Autorizado: salida
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000123", "accessPointCode": "BOD-01", "movementType": "Exit" }
+
+### Rechazado: CredentialNotFound
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "NO-EXISTE-1", "accessPointCode": "BOD-01", "movementType": "Entry" }
+
+### Rechazado: AccessPointNotFound
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000123", "accessPointCode": "XXX-99", "movementType": "Entry" }
+
+### Rechazado: AccessPointDisabled
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000123", "accessPointCode": "RES-01", "movementType": "Entry" }
+
+### Bloquear credencial de Pedro
+POST {{host}}/api/credentials/{{credPedro.response.body.$.id}}/block
+
+### Rechazado: CredentialBlocked
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000456", "accessPointCode": "BOD-01", "movementType": "Entry" }
+
+### Revocar credencial de Pedro
+POST {{host}}/api/credentials/{{credPedro.response.body.$.id}}/revoke
+
+### Rechazado: CredentialRevoked
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000456", "accessPointCode": "BOD-01", "movementType": "Entry" }
+
+### Error 400: una credencial revocada no puede bloquearse
+POST {{host}}/api/credentials/{{credPedro.response.body.$.id}}/block
+
+### Desactivar a Laura
+PATCH {{host}}/api/employees/{{laura.response.body.$.id}}/deactivate
+
+### Rechazado: EmployeeInactive
+POST {{host}}/api/access/requests
+Content-Type: application/json
+
+{ "credentialCode": "CRD-000123", "accessPointCode": "BOD-01", "movementType": "Entry" }
+
+########################## RF-04 HISTORIAL #############################
+
+### Por empleado, paginado
+GET {{host}}/api/access/records?employeeId={{laura.response.body.$.id}}&page=1&pageSize=5
+
+### Solo rechazados
+GET {{host}}/api/access/records?result=Rejected
+
+### Por punto de acceso
+GET {{host}}/api/access/records?accessPointId={{bodega.response.body.$.id}}
+
+### Por rango de fechas (ajusta a la fecha de tus pruebas, en UTC)
+GET {{host}}/api/access/records?fromUtc=2026-10-01T00:00:00&toUtc=2026-12-31T23:59:59&page=1&pageSize=20
+
+### Error 400: rango de fechas invertido
+GET {{host}}/api/access/records?fromUtc=2026-12-01&toUtc=2026-01-01
